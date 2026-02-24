@@ -462,10 +462,15 @@
       if(!res.ok)throw new Error(`HTTP ${res.status}`);
     }catch(e){setStatus(`<span class="bad">Error:</span> ${e.message}`);streaming=false;return false}
 
-    // Decompress gzip streams natively
+    // Decompress gzip streams natively (skip if server already decoded)
     let body=res.body;
     if(url.endsWith(".gz")){
-      try{body=body.pipeThrough(new DecompressionStream("gzip"))}catch(_){}
+      const ct=(res.headers.get("content-type")||"").toLowerCase();
+      // If content-type is gzip/octet-stream, the body is raw compressed bytes
+      // If it's text/*, the server already transparently decoded it
+      if(ct.includes("gzip")||ct.includes("octet-stream")||!ct.includes("text")){
+        try{body=body.pipeThrough(new DecompressionStream("gzip"))}catch(_){}
+      }
     }
     const reader=body.getReader(),dec=new TextDecoder();
     let partial="",rows=0,hdrDone=false,lastR=0,allTxt="";
