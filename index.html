@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Bitcoin Block Explorer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css" />
+  <style>
+    :root {
+      --bg: #08080a; --panel: #111116; --card: #151519; --border: #222230;
+      --text: #eeeef2; --muted: #77778a; --dim: #44445a;
+      --gold: #f7a600; --red: #ff5c5c; --blue: #4da8f7; --green: #5ee080;
+      --radius: 16px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{background:var(--bg);overflow-x:hidden}
+    body{font-family:system-ui,-apple-system,"SF Pro Display","Segoe UI",sans-serif;color:var(--text);min-height:100dvh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+    .app{width:100%;max-width:100%;margin:0 auto;padding:12px clamp(8px,2vw,16px) 40px}
+
+    /* ── Header ── */
+    .hdr{text-align:center;padding:clamp(10px,3vw,20px) 0 8px}
+    .hdr h1{font-size:clamp(17px,4.5vw,24px);font-weight:900;letter-spacing:-.03em;background:linear-gradient(135deg,var(--gold),#ffcc44);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .hdr p{font-size:clamp(10px,2.5vw,12px);color:var(--muted);margin-top:4px}
+
+    /* ── Status ── */
+    #status{margin:8px 0;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:9px 12px;font-size:12px;color:#bbb;text-align:center;min-height:38px;display:flex;align-items:center;justify-content:center;gap:6px;transition:opacity .3s}
+    .ok{color:var(--green);font-weight:800}.bad{color:var(--red);font-weight:800}.warn{color:var(--gold);font-weight:800}
+    .progress-wrap{width:100%;max-width:300px;height:4px;background:#1a1a24;border-radius:2px;overflow:hidden;display:inline-block;vertical-align:middle}
+    .progress-bar{height:100%;background:var(--gold);border-radius:2px;transition:width .25s;width:0%}
+
+    /* ── Metric tabs (carousel) ── */
+    .tabs{display:flex;gap:6px;justify-content:center;margin:10px 0;flex-wrap:wrap}
+    .tab{padding:8px 14px;border-radius:12px;font-size:clamp(11px,2.8vw,13px);font-weight:700;border:1px solid var(--border);background:var(--panel);color:var(--muted);cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent;user-select:none;white-space:nowrap;display:flex;align-items:center;gap:5px}
+    .tab:hover{border-color:#444}
+    .tab.active{color:#fff;border-color:var(--tab-c,var(--gold));background:color-mix(in srgb,var(--tab-c,var(--gold)) 14%,var(--panel))}
+    .tab .ico{font-size:14px}
+
+    /* ── Stats row ── */
+    .stats{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .stats::-webkit-scrollbar{display:none}
+    .stats:empty{display:none}
+    .st{flex:0 0 auto;min-width:90px;background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:7px 10px;text-align:center}
+    .st .l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+    .st .v{font-size:clamp(12px,3vw,14px);font-weight:900;color:#fff}
+
+    /* ── Chart card ── */
+    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:10px;position:relative;transition:opacity .2s}
+    .card-head{padding:8px 12px;font-size:12px;color:#ccc;border-bottom:1px solid var(--border);background:#101016;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
+    .card-head .title{font-weight:800;display:flex;align-items:center;gap:5px}
+    .card-head .pill{font-size:9px;color:var(--muted);background:var(--bg);border:1px solid var(--border);padding:3px 7px;border-radius:999px}
+    .chart-area{padding:6px;min-height:340px;overflow:hidden;position:relative;touch-action:none;cursor:grab}
+    .chart-area.grabbing{cursor:grabbing}
+
+    /* ── Zoom/pan toolbar (floating inside chart) ── */
+    .zoom-bar{position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:10}
+    .zoom-bar-left{position:absolute;top:8px;left:8px;display:flex;gap:4px;z-index:10}
+    .zbtn{width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:rgba(17,17,22,.88);color:#ccc;font-size:16px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);-webkit-tap-highlight-color:transparent;transition:background .15s,color .15s;user-select:none}
+    .zbtn:hover,.zbtn:active{background:rgba(30,30,40,.95);color:#fff}
+
+    /* ── Marker legends ── */
+    .legends{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:4px 0 6px;font-size:10px;color:var(--muted)}
+    .legends span{display:flex;align-items:center;gap:3px}
+    .legends .d{width:6px;height:6px;border-radius:50%}
+    .legends .dash{width:14px;height:0;border-top:2px dashed;opacity:.7}
+
+    /* ── Top settings bar ── */
+    .settings-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center;margin:6px 0;padding:8px 10px;background:var(--panel);border:1px solid var(--border);border-radius:12px}
+    .settings-bar label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px}
+    .settings-bar select,.settings-bar input[type=number]{background:var(--bg);border:1px solid var(--border);color:#fff;border-radius:9px;padding:5px 7px;font-size:12px;min-height:30px}
+    .settings-bar input[type=number]{width:72px}
+    .settings-bar .sep{width:1px;height:20px;background:var(--border);margin:0 2px}
+    .cbtn{padding:5px 12px;border:1px solid var(--border);background:var(--bg);color:#ccc;border-radius:9px;cursor:pointer;font-weight:700;font-size:11px;min-height:30px;white-space:nowrap;transition:background .15s}
+    .cbtn:hover{background:#1d1d28;color:#fff}
+
+    /* ── uPlot overrides ── */
+    .uplot .u-legend{font-size:10px!important;padding:2px 0!important}
+    .uplot .u-legend .u-series td{color:var(--muted)!important}
+    .uplot .u-legend .u-series .u-value{color:#fff!important;font-weight:700}
+    .u-wrap{background:transparent!important}
+
+    /* ── Mobile ── */
+    @media(max-width:600px){
+      .tabs{gap:4px}
+      .tab{padding:7px 10px;font-size:11px;border-radius:10px}
+      .tab .ico{font-size:12px}
+      .st{min-width:75px;padding:5px 7px}
+      .st .v{font-size:12px}
+      .zbtn{width:40px;height:40px;font-size:20px;border-radius:11px}
+      .chart-area{padding:3px;min-height:280px}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="hdr">
+    <h1>⬡ Bitcoin Block Explorer</h1>
+    <p>Every block · Genesis to tip · Cached locally · gzip compressed</p>
+  </div>
+
+  <div id="status">Loading…</div>
+
+  <!-- Metric carousel tabs -->
+  <div class="tabs" id="tabs" style="display:none">
+    <div class="tab active" data-m="total_out_btc" style="--tab-c:var(--gold)"><span class="ico">₿</span> Value</div>
+    <div class="tab" data-m="total_fee_btc" style="--tab-c:var(--red)"><span class="ico">⛏</span> Fees</div>
+    <div class="tab" data-m="bytes" style="--tab-c:var(--blue)"><span class="ico">📦</span> Size</div>
+    <div class="tab" data-m="weight" style="--tab-c:var(--green)"><span class="ico">⚖</span> Weight</div>
+  </div>
+
+  <!-- Settings bar -->
+  <div class="settings-bar" id="settings-bar" style="display:none">
+    <label>Smooth
+      <select id="smooth">
+        <option value="1">Off</option>
+        <option value="10">10</option>
+        <option value="100">100</option>
+        <option value="144" selected>144 (day)</option>
+        <option value="1008">1008 (week)</option>
+        <option value="2016">2016</option>
+        <option value="4320">4320 (month)</option>
+      </select>
+    </label>
+    <label>Detail
+      <select id="resolution">
+        <option value="1">All</option>
+        <option value="10">1:10</option>
+        <option value="100" selected>1:100</option>
+        <option value="144">Daily</option>
+        <option value="1008">Weekly</option>
+      </select>
+    </label>
+    <span class="sep"></span>
+    <label>From <input type="number" id="r-from" value="0" min="0" /></label>
+    <label>To <input type="number" id="r-to" value="0" min="0" /></label>
+    <button class="cbtn" id="r-apply">Apply</button>
+    <button class="cbtn" id="r-full">Full</button>
+    <span class="sep"></span>
+    <button class="cbtn" id="reload-btn">↻ Reload</button>
+    <button class="cbtn" id="cache-btn" disabled>Clear Cache</button>
+  </div>
+
+  <!-- Stats strip -->
+  <div class="stats" id="stats"></div>
+
+  <!-- Marker legends -->
+  <div class="legends" id="halvings" style="display:none">
+    <span><span class="d" style="background:var(--red)"></span>Halving 210k</span>
+    <span><span class="d" style="background:var(--blue)"></span>420k</span>
+    <span><span class="d" style="background:var(--green)"></span>630k</span>
+    <span><span class="d" style="background:var(--gold)"></span>840k</span>
+    <span style="margin-left:6px"><span class="dash" style="border-color:#a78bfa"></span>SegWit 481k</span>
+    <span><span class="dash" style="border-color:#f472b6"></span>Taproot 710k</span>
+    <span><span class="dash" style="border-color:#fb923c"></span>Ordinals 767k</span>
+    <span><span class="dash" style="border-color:#facc15"></span>BRC-20 780k</span>
+    <span><span class="dash" style="border-color:#38bdf8"></span>Bitmap 796k</span>
+    <span><span class="dash" style="border-color:#34d399"></span>Runes 840k</span>
+  </div>
+
+  <!-- Chart card -->
+  <div class="card" id="card" style="display:none">
+    <div class="card-head">
+      <span class="title" id="c-title">Chart</span>
+      <span class="pill" id="c-pill"></span>
+    </div>
+    <div class="chart-area" id="chart-area">
+      <div class="zoom-bar-left">
+        <button class="zbtn" id="z-pan-l" title="Pan left">◀</button>
+        <button class="zbtn" id="z-pan-r" title="Pan right">▶</button>
+      </div>
+      <div class="zoom-bar">
+        <button class="zbtn" id="z-out" title="Zoom out">−</button>
+        <button class="zbtn" id="z-in" title="Zoom in">+</button>
+        <button class="zbtn" id="z-reset" title="Reset zoom">⟲</button>
+      </div>
+      <div id="chart-wrap"></div>
+    </div>
+  </div>
+
+
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const CSV_GZ   = "blockusages.csv.gz";
+  const CSV_PLAIN = "blockusages.csv";
+  const STREAM_CHUNK = 50000;
+  const EXPECTED_ROWS = 940000;
+
+  const $ = id => document.getElementById(id);
+  const setStatus = h => { $("status").innerHTML = h; };
+
+  function csvUrl() { return new URLSearchParams(location.search).get("csv") || CSV_GZ; }
+
+  // ── IndexedDB ──
+  const IDB = "block-explorer-v3", STORE = "kv", KEY = "csv_v3";
+  function openDb() {
+    return new Promise((ok,no)=>{const r=indexedDB.open(IDB,1);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE)};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+  }
+  async function dbGet(k){const d=await openDb();return new Promise((ok,no)=>{const t=d.transaction(STORE,"readonly").objectStore(STORE).get(k);t.onsuccess=()=>ok(t.result);t.onerror=()=>no(t.error)})}
+  async function dbSet(k,v){const d=await openDb();return new Promise((ok,no)=>{const t=d.transaction(STORE,"readwrite").objectStore(STORE).put(v,k);t.onsuccess=()=>ok();t.onerror=()=>no(t.error)})}
+  async function dbDel(k){const d=await openDb();return new Promise((ok,no)=>{const t=d.transaction(STORE,"readwrite").objectStore(STORE).delete(k);t.onsuccess=()=>ok();t.onerror=()=>no(t.error)})}
+
+  // ── Halvings ──
+  const HV = [
+    {h:210000,c:"var(--red)"},{h:420000,c:"var(--blue)"},{h:630000,c:"var(--green)"},{h:840000,c:"var(--gold)"}
+  ];
+
+  // ── Notable events ──
+  const EVENTS = [
+    {h:481824, lbl:"SegWit",   c:"#a78bfa"},
+    {h:709632, lbl:"Taproot",  c:"#f472b6"},
+    {h:767430, lbl:"Ordinals", c:"#fb923c"},
+    {h:779832, lbl:"BRC-20",   c:"#facc15"},
+    {h:792435, lbl:"Bitmap",   c:"#38bdf8"},
+    {h:840000, lbl:"Runes",    c:"#34d399"},
+  ];
+
+  // ── Data ──
+  let H=null, Osat=null, Fsat=null, Byt=null, Wt=null, maxH=-1, streaming=false;
+  let _h=[],_o=[],_f=[],_b=[],_w=[];
+  function resetBuf(){_h=[];_o=[];_f=[];_b=[];_w=[]}
+  function pushRow(p){_h.push(+p[0]);_o.push(+p[1]);_f.push(+p[2]);_b.push(+p[3]);_w.push(+p[4])}
+  function snap(){H=Float64Array.from(_h);Osat=Float64Array.from(_o);Fsat=Float64Array.from(_f);Byt=Float64Array.from(_b);Wt=Float64Array.from(_w);maxH=_h.length-1}
+  function finalise(){snap();$("r-to").value=maxH;$("r-to").max=maxH;$("r-from").max=maxH}
+
+  // ── View range (zoom state) ──
+  let vFrom = 0, vTo = 0;
+  function viewRange() { return { from: vFrom, to: vTo }; }
+  function setView(f, t) { vFrom = Math.max(0, Math.round(f)); vTo = Math.min(maxH, Math.round(t)); $("r-from").value = vFrom; $("r-to").value = vTo; }
+  function resetView() { setView(0, maxH); }
+
+  // ── Metrics ──
+  const METRICS = {
+    total_out_btc: { raw:()=>Osat, div:1e8, lbl:"Total Output", unit:"BTC", color:"#f7a600", yf:fBtc },
+    total_fee_btc: { raw:()=>Fsat, div:1e8, lbl:"Total Fee",   unit:"BTC", color:"#ff5c5c", yf:fBtc },
+    bytes:         { raw:()=>Byt,  div:1,   lbl:"Block Size",   unit:"bytes",color:"#4da8f7", yf:fBy },
+    weight:        { raw:()=>Wt,   div:1,   lbl:"Block Weight", unit:"WU",  color:"#5ee080", yf:fWU },
+  };
+  let curMetric = "total_out_btc";
+
+  function fBtc(u,v){return v.map(x=>x==null?"—":x>=1e6?(x/1e6).toFixed(1)+"M":x>=1e3?(x/1e3).toFixed(1)+"k":x.toFixed(2))}
+  function fBy(u,v){return v.map(x=>x==null?"—":x>=1e6?(x/1e6).toFixed(2)+" MB":x>=1e3?(x/1e3).toFixed(0)+" kB":x.toFixed(0)+" B")}
+  function fWU(u,v){return v.map(x=>x==null?"—":x>=1e6?(x/1e6).toFixed(2)+"M":x>=1e3?(x/1e3).toFixed(0)+"k":x.toFixed(0))}
+  function fH(u,v){return v.map(x=>x==null?"—":x>=1e6?(x/1e6).toFixed(2)+"M":x>=1e3?(x/1e3).toFixed(0)+"k":String(Math.round(x)))}
+
+  // ── Math ──
+  function ma(arr,w){if(w<=1)return arr;const n=arr.length,o=new Float64Array(n);let s=0;for(let i=0;i<n;i++){s+=arr[i];if(i>=w)s-=arr[i-w];o[i]=s/Math.min(i+1,w)}return o}
+  function ds(xs,ys,step,f,t){const ox=[],oy=[];for(let i=f;i<=t;i+=step){ox.push(xs[i]);oy.push(ys[i])}return[Float64Array.from(ox),Float64Array.from(oy)]}
+
+  // ── Stats ──
+  function renderStats(f,t,m){
+    const el=$("stats");
+    const raw=m.raw(), d=m.div, n=t-f+1;
+    let sum=0,mn=Infinity,mx=-Infinity;
+    for(let i=f;i<=t;i++){const v=raw[i]/d;sum+=v;if(v<mn)mn=v;if(v>mx)mx=v}
+    const avg=n>0?sum/n:0;
+    function nice(v){
+      if(m.unit==="BTC")return v>=1e6?(v/1e6).toFixed(2)+"M":v>=1e3?(v/1e3).toFixed(1)+"k":v.toFixed(2);
+      if(m.unit==="bytes")return v>=1e6?(v/1e6).toFixed(2)+" MB":v>=1e3?(v/1e3).toFixed(0)+" kB":v.toFixed(0);
+      return v>=1e6?(v/1e6).toFixed(2)+"M":v>=1e3?(v/1e3).toFixed(0)+"k":v.toFixed(0);
+    }
+    el.innerHTML=`
+      <div class="st"><div class="l">Blocks</div><div class="v">${n.toLocaleString()}</div></div>
+      <div class="st"><div class="l">Avg</div><div class="v">${nice(avg)}</div></div>
+      <div class="st"><div class="l">Min</div><div class="v">${nice(mn)}</div></div>
+      <div class="st"><div class="l">Max</div><div class="v">${nice(mx)}</div></div>
+      <div class="st"><div class="l">Total</div><div class="v">${nice(sum)}</div></div>`;
+  }
+
+  // ── Chart ──
+  let chart = null;
+  function kill(){if(chart){chart.destroy();chart=null}$("chart-wrap").innerHTML=""}
+
+  function halvPlugin(f,t){
+    return{hooks:{drawSeries:[(u,si)=>{
+      if(si!==1)return;const ctx=u.ctx;ctx.save();
+      const top=u.bbox.top,bot=top+u.bbox.height;
+      // Halving lines (solid-ish dashed)
+      for(const hv of HV){if(hv.h<f||hv.h>t)continue;const x=u.valToPos(hv.h,"x",true);
+        ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue(hv.c.replace("var(","").replace(")","")).trim()||hv.c;
+        ctx.lineWidth=1.2;ctx.globalAlpha=.45;ctx.setLineDash([5,3]);ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,bot);ctx.stroke()}
+      // Event lines (shorter dash, label at top)
+      for(const ev of EVENTS){if(ev.h<f||ev.h>t)continue;const x=u.valToPos(ev.h,"x",true);
+        ctx.strokeStyle=ev.c;ctx.lineWidth=1;ctx.globalAlpha=.38;ctx.setLineDash([3,4]);
+        ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,bot);ctx.stroke();
+        // label
+        ctx.globalAlpha=.7;ctx.fillStyle=ev.c;ctx.font="bold 9px system-ui";ctx.textAlign="center";
+        ctx.fillText(ev.lbl,x,top+10);
+      }
+      ctx.restore();
+    }]}};
+  }
+
+  function render(isStream){
+    kill();
+    if(!H||H.length<2)return;
+    const m=METRICS[curMetric], raw=m.raw(), sm=+$("smooth").value||1, step=+$("resolution").value||1;
+    const {from:f,to:t}=viewRange();
+    if(f>=t)return;
+
+    const scaled=new Float64Array(H.length);
+    for(let i=0;i<H.length;i++) scaled[i]=raw[i]/m.div;
+    const smoothed=ma(scaled,sm);
+    const [xs,ys]=ds(H,smoothed,step,f,t);
+
+    $("c-title").textContent=m.lbl+" ("+m.unit+")";
+    const smL=sm>1?` · ${sm}-blk MA`:"";
+    const stL=step>1?` · 1:${step}`:"";
+    $("c-pill").textContent=`${f.toLocaleString()}–${t.toLocaleString()}${smL}${stL}`;
+    $("card").style.display="";
+    $("halvings").style.display="";
+
+    if(!isStream) renderStats(f,t,m);
+
+    const wrap=$("chart-wrap");
+    const w=wrap.clientWidth||Math.min(window.innerWidth-20,1800);
+    const h=Math.max(360,Math.min(620,window.innerHeight*.55));
+
+    chart=new uPlot({
+      width:w,height:h,
+      plugins:[halvPlugin(f,t)],
+      cursor:{drag:{x:false,y:false}},
+      scales:{x:{time:false},y:{auto:true}},
+      axes:[
+        {stroke:"#444",grid:{stroke:"rgba(255,255,255,.03)"},font:"11px system-ui",values:fH,label:"Block Height",labelFont:"bold 11px system-ui",labelSize:18},
+        {stroke:"#444",grid:{stroke:"rgba(255,255,255,.05)"},font:"11px system-ui",label:m.unit,labelFont:"bold 11px system-ui",labelSize:28,values:m.yf,size:60},
+      ],
+      series:[{},{label:m.lbl,stroke:m.color,width:1.4,fill:m.color+"18"}],
+    },[xs,ys],wrap);
+
+    if(!isStream) setStatus(`<span class="ok">✓</span> ${xs.length.toLocaleString()} pts · ${(maxH+1).toLocaleString()} blocks`);
+  }
+
+  // ── Pan helpers ──
+  function panBy(frac){
+    const{from:f,to:t}=viewRange();const s=Math.round((t-f)*frac);
+    setView(f+s,t+s);render();
+  }
+  function panLeft(){panBy(-0.25)}
+  function panRight(){panBy(0.25)}
+
+  // ── Zoom actions ──
+  function zoomAt(frac,factor){
+    const{from:f,to:t}=viewRange();const span=t-f;
+    const pivot=f+span*frac;
+    const ns=Math.max(200,Math.min(maxH,span*factor));
+    setView(pivot-ns*frac,pivot+ns*(1-frac));render();
+  }
+  function zoomIn(){zoomAt(0.5,0.4)}
+  function zoomOut(){zoomAt(0.5,2.5)}
+  function zoomReset(){resetView();render()}
+
+  // ── Keyboard: arrows pan, +/- zoom, 0 reset ──
+  document.addEventListener("keydown",e=>{
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT")return;
+    if(e.key==="="||e.key==="+")zoomIn();
+    else if(e.key==="-"||e.key==="_")zoomOut();
+    else if(e.key==="0")zoomReset();
+    else if(e.key==="ArrowLeft"){e.preventDefault();panLeft()}
+    else if(e.key==="ArrowRight"){e.preventDefault();panRight()}
+  });
+
+  // ── Mouse wheel: zoom (shift+wheel = pan) ──
+  const ca=$("chart-area");
+  ca.addEventListener("wheel",e=>{
+    e.preventDefault();
+    const{from:f,to:t}=viewRange();const span=t-f;
+    const rect=ca.getBoundingClientRect();
+    const frac=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
+    if(e.shiftKey){
+      const amt=Math.round(span*(e.deltaY>0?0.15:-0.15));
+      setView(f+amt,t+amt);render();return;
+    }
+    const factor=e.deltaY>0?1.3:0.7;
+    zoomAt(frac,factor);
+  },{passive:false});
+
+  // ── Mouse drag to pan ──
+  let dragActive=false,dragX0=0,dragVF=0,dragVT=0;
+  ca.addEventListener("mousedown",e=>{
+    if(e.button!==0||!chart)return;
+    dragActive=true;dragX0=e.clientX;dragVF=vFrom;dragVT=vTo;
+    ca.classList.add("grabbing");e.preventDefault();
+  });
+  document.addEventListener("mousemove",e=>{
+    if(!dragActive||!chart)return;
+    const rect=ca.getBoundingClientRect();
+    const dVal=-(e.clientX-dragX0)/rect.width*(dragVT-dragVF);
+    setView(dragVF+dVal,dragVT+dVal);
+    render(true);
+  });
+  document.addEventListener("mouseup",()=>{
+    if(dragActive){dragActive=false;ca.classList.remove("grabbing");render()}
+  });
+
+  // ── Double-click to zoom in at cursor ──
+  ca.addEventListener("dblclick",e=>{
+    const rect=ca.getBoundingClientRect();
+    const frac=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
+    zoomAt(frac,0.4);
+  });
+
+  // ── Touch: 1-finger pan, 2-finger pinch-zoom ──
+  let touchMode="",touchX0=0,touchVF=0,touchVT=0,pinchDist=0,pinchFrom=0,pinchTo=0;
+  ca.addEventListener("touchstart",e=>{
+    if(e.touches.length===1){
+      touchMode="pan";touchX0=e.touches[0].clientX;touchVF=vFrom;touchVT=vTo;
+    }else if(e.touches.length===2){
+      touchMode="pinch";
+      pinchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      pinchFrom=vFrom;pinchTo=vTo;
+    }
+  },{passive:true});
+  ca.addEventListener("touchmove",e=>{
+    e.preventDefault();
+    if(touchMode==="pan"&&e.touches.length===1){
+      const rect=ca.getBoundingClientRect();
+      const dx=e.touches[0].clientX-touchX0;
+      const dVal=-(dx/rect.width)*(touchVT-touchVF);
+      setView(touchVF+dVal,touchVT+dVal);render(true);
+    }else if(touchMode==="pinch"&&e.touches.length===2){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      if(pinchDist>0){
+        const scale=pinchDist/d;
+        const oSpan=pinchTo-pinchFrom;const mid=(pinchFrom+pinchTo)/2;
+        const ns=Math.max(200,Math.min(maxH,oSpan*scale));
+        setView(mid-ns/2,mid+ns/2);render(true);
+      }
+    }
+  },{passive:false});
+  ca.addEventListener("touchend",()=>{if(touchMode){render();touchMode=""}},{passive:true});
+
+  function showUI(){
+    $("tabs").style.display="";
+    $("settings-bar").style.display="";
+    $("card").style.display="";
+    $("halvings").style.display="";
+  }
+
+  function progressHtml(n,total,msg){
+    const pct=total>0?Math.min(100,(n/total*100)).toFixed(0):0;
+    return`${msg} <div class="progress-wrap"><div class="progress-bar" style="width:${pct}%"></div></div> <span style="color:var(--muted)">${n.toLocaleString()} (${pct}%)</span>`;
+  }
+
+  // ── Streaming fetch (supports .gz via DecompressionStream) ──
+  async function streamFetch(){
+    streaming=true;resetBuf();
+    let url=csvUrl();
+    setStatus(`Fetching ${url}…`);
+    const t0=performance.now();
+    let res;
+    try{
+      res=await fetch(url);
+      // If .gz 404, fall back to plain CSV
+      if(!res.ok&&url.endsWith(".gz")){url=CSV_PLAIN;setStatus(`Fetching ${url}…`);res=await fetch(url)}
+      if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    }catch(e){setStatus(`<span class="bad">Error:</span> ${e.message}`);streaming=false;return false}
+
+    // Decompress gzip streams natively
+    let body=res.body;
+    if(url.endsWith(".gz")){
+      try{body=body.pipeThrough(new DecompressionStream("gzip"))}catch(_){}
+    }
+    const reader=body.getReader(),dec=new TextDecoder();
+    let partial="",rows=0,hdrDone=false,lastR=0,allTxt="";
+    showUI();
+    while(true){
+      const{done,value}=await reader.read();if(done)break;
+      const chunk=dec.decode(value,{stream:true});allTxt+=chunk;partial+=chunk;
+      const lines=partial.split("\n");partial=lines.pop();
+      for(const raw of lines){const l=raw.trim();if(!l)continue;if(!hdrDone){if(l.startsWith("height")){hdrDone=true;continue}hdrDone=true}
+        const p=l.split(",");if(p.length>=5){pushRow(p);rows++}}
+      if(rows-lastR>=STREAM_CHUNK&&rows>0){lastR=rows;snap();vTo=maxH;$("r-to").value=maxH;
+        setStatus(progressHtml(rows,EXPECTED_ROWS,"Streaming…"));render(true);await new Promise(r=>setTimeout(r,0))}
+    }
+    if(partial.trim()){const l=partial.trim();if(!l.startsWith("height")){const p=l.split(",");if(p.length>=5){pushRow(p);rows++}}}
+    finalise();resetView();streaming=false;
+    const elapsed=((performance.now()-t0)/1000).toFixed(1);
+    render();
+    try{await dbSet(KEY,{text:allTxt,savedAt:Date.now(),count:rows});$("cache-btn").disabled=false;
+      setStatus(`<span class="ok">✓</span> ${rows.toLocaleString()} blocks · ${elapsed}s · cached`)}
+    catch(e){setStatus(`<span class="ok">✓</span> ${rows.toLocaleString()} blocks loaded`)}
+    return true;
+  }
+
+  // ── Load cache ──
+  async function loadCache(){
+    try{const c=await dbGet(KEY);if(!c||!c.text)return false;
+      setStatus("Loading cache…");resetBuf();
+      const lines=c.text.split("\n");let hdr=false;
+      for(const raw of lines){const l=raw.trim();if(!l)continue;if(!hdr){if(l.startsWith("height")){hdr=true;continue}hdr=true}
+        const p=l.split(",");if(p.length>=5)pushRow(p)}
+      finalise();if(maxH<0)return false;resetView();
+      $("cache-btn").disabled=false;
+      const age=c.savedAt?` · cached ${new Date(c.savedAt).toLocaleString()}`:"";
+      setStatus(`<span class="ok">✓</span> ${(maxH+1).toLocaleString()} blocks${age}`);
+      showUI();render();return true;
+    }catch(_){return false}
+  }
+
+  async function clearCache(){
+    await dbDel(KEY);$("cache-btn").disabled=true;H=null;maxH=-1;kill();
+    $("stats").innerHTML="";$("card").style.display="none";
+    setStatus('<span class="warn">Cache cleared.</span> Reloading…');
+    await streamFetch();
+  }
+
+  // ── Tab clicks (carousel) ──
+  $("tabs").addEventListener("click",e=>{
+    const tab=e.target.closest(".tab");if(!tab||streaming)return;
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    tab.classList.add("active");
+    curMetric=tab.dataset.m;
+    render();
+  });
+
+  // ── Pan buttons ──
+  $("z-pan-l").addEventListener("click",panLeft);
+  $("z-pan-r").addEventListener("click",panRight);
+
+  // ── Control events ──
+  $("z-in").addEventListener("click",zoomIn);
+  $("z-out").addEventListener("click",zoomOut);
+  $("z-reset").addEventListener("click",zoomReset);
+  $("smooth").addEventListener("change",()=>{if(!streaming)render()});
+  $("resolution").addEventListener("change",()=>{if(!streaming)render()});
+  $("r-apply").addEventListener("click",()=>{setView(+$("r-from").value,+$("r-to").value);if(!streaming)render()});
+  $("r-full").addEventListener("click",()=>{resetView();if(!streaming)render()});
+  $("reload-btn").addEventListener("click",()=>{if(!streaming)streamFetch()});
+  $("cache-btn").addEventListener("click",clearCache);
+
+  // ── Resize ──
+  let rTmr;
+  window.addEventListener("resize",()=>{clearTimeout(rTmr);rTmr=setTimeout(()=>{if(chart){const w=$("chart-wrap");chart.setSize({width:w.clientWidth||Math.min(window.innerWidth-30,1800),height:Math.max(360,Math.min(620,window.innerHeight*.55))})}},200)});
+
+  // ── Init ──
+  (async()=>{const ok=await loadCache();if(!ok)await streamFetch()})();
+})();
+</script>
+</body>
+</html>
