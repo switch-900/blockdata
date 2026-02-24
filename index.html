@@ -73,6 +73,13 @@
     .cbtn{padding:5px 12px;border:1px solid var(--border);background:var(--bg);color:#ccc;border-radius:9px;cursor:pointer;font-weight:700;font-size:11px;min-height:30px;white-space:nowrap;transition:background .15s}
     .cbtn:hover{background:#1d1d28;color:#fff}
 
+    /* ── Fullscreen mode ── */
+    .app.fullscreen{position:fixed;inset:0;z-index:9999;padding:0;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+    .app.fullscreen .hdr,.app.fullscreen #status,.app.fullscreen .tabs,.app.fullscreen .settings-bar,.app.fullscreen .stats,.app.fullscreen .legends{display:none!important}
+    .app.fullscreen .card{flex:1;margin:0;border:none;border-radius:0;display:flex;flex-direction:column}
+    .app.fullscreen .card-head{border-radius:0}
+    .app.fullscreen .chart-area{flex:1;min-height:0;padding:4px}
+
     /* ── uPlot overrides ── */
     .uplot .u-legend{font-size:10px!important;padding:2px 0!important}
     .uplot .u-legend .u-series td{color:var(--muted)!important}
@@ -173,6 +180,7 @@
         <button class="zbtn" id="z-out" title="Zoom out">−</button>
         <button class="zbtn" id="z-in" title="Zoom in">+</button>
         <button class="zbtn" id="z-reset" title="Reset zoom">⟲</button>
+        <button class="zbtn" id="z-fs" title="Fullscreen">⛶</button>
       </div>
       <div id="chart-wrap"></div>
     </div>
@@ -319,8 +327,9 @@
     if(!isStream) renderStats(f,t,m);
 
     const wrap=$("chart-wrap");
+    const isFs=document.querySelector(".app.fullscreen");
     const w=wrap.clientWidth||Math.min(window.innerWidth-20,1800);
-    const h=Math.max(360,Math.min(620,window.innerHeight*.55));
+    const h=isFs?(wrap.clientHeight||window.innerHeight-40):Math.max(360,Math.min(620,window.innerHeight*.55));
 
     chart=new uPlot({
       width:w,height:h,
@@ -364,6 +373,8 @@
     else if(e.key==="0")zoomReset();
     else if(e.key==="ArrowLeft"){e.preventDefault();panLeft()}
     else if(e.key==="ArrowRight"){e.preventDefault();panRight()}
+    else if(e.key==="f"||e.key==="F")toggleFs();
+    else if(e.key==="Escape"&&document.querySelector(".app.fullscreen"))toggleFs();
   });
 
   // ── Mouse wheel: zoom (shift+wheel = pan) ──
@@ -524,6 +535,18 @@
     curMetric=tab.dataset.m;
     render();
   });
+
+  // ── Fullscreen toggle ──
+  function toggleFs(){
+    document.querySelector(".app").classList.toggle("fullscreen");
+    setTimeout(()=>{
+      if(chart){
+        const w=$("chart-wrap");
+        chart.setSize({width:w.clientWidth||window.innerWidth,height:w.clientHeight||window.innerHeight-40});
+      }
+    },50);
+  }
+  $("z-fs").addEventListener("click",toggleFs);
 
   // ── Pan buttons ──
   $("z-pan-l").addEventListener("click",panLeft);
